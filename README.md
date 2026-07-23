@@ -8,7 +8,7 @@ inside the cluster and supports `linux/amd64` and `linux/arm64`.
 
 Prerequisites:
 
-- a Kubernetes cluster with `kubectl` access;
+- a Kubernetes cluster with `kubectl` and Helm 3;
 - an Inkronik cluster-agent ingest key;
 - Metrics Server when node and pod resource metrics are required.
 
@@ -31,7 +31,33 @@ kubectl -n inkronik create secret generic inkronik-k8s-agent \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Install the version-pinned manifest and configure the cluster name:
+Install the version-pinned OCI chart:
+
+```sh
+helm upgrade --install inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.0.0 \
+  --namespace inkronik \
+  --create-namespace \
+  --set-string clusterName="$CLUSTER_NAME" \
+  --wait
+```
+
+Check the agent logs:
+
+```sh
+kubectl -n inkronik logs deployment/inkronik-k8s-agent --follow
+```
+
+The chart uses the version-pinned image
+`ghcr.io/inkronik/kubernetes-agent:1.0.0` and the hosted Collector at
+`https://collector.inkronik.codemask.dev`. See the
+[chart documentation](charts/inkronik-kubernetes-agent/README.md) for all
+values, upgrades, rollback, externally managed RBAC, and image digest pinning.
+
+### Raw manifest alternative
+
+The raw manifest remains available for environments without Helm:
 
 ```sh
 kubectl apply -f \
@@ -43,17 +69,8 @@ kubectl -n inkronik set env deployment/inkronik-k8s-agent \
 kubectl -n inkronik rollout status deployment/inkronik-k8s-agent
 ```
 
-Check the agent logs:
-
-```sh
-kubectl -n inkronik logs deployment/inkronik-k8s-agent --follow
-```
-
-The manifest uses the version-pinned image
-`ghcr.io/inkronik/kubernetes-agent:1.0.0` and the hosted Collector at
-`https://collector.inkronik.codemask.dev`. Review the manifest before applying
-it if your environment requires a proxy, private registry mirror, or a custom
-Collector URL.
+Review the raw manifest before applying it when your environment requires a
+proxy, private registry mirror, or custom Collector URL.
 
 ## Collected telemetry
 
@@ -125,6 +142,11 @@ Run the checks:
 test -z "$(gofmt -l .)"
 go vet ./...
 go test -race ./...
+helm lint --strict charts/inkronik-kubernetes-agent \
+  --set-string clusterName=local-validation
+helm template inkronik-kubernetes-agent charts/inkronik-kubernetes-agent \
+  --namespace inkronik \
+  --set-string clusterName=local-validation
 ```
 
 Build a local image:
@@ -143,9 +165,11 @@ docker run --rm ghcr.io/inkronik/kubernetes-agent:1.0.0 --version
 
 ## Upgrading
 
-Change both the raw manifest tag and the container image tag to the same
-published version. Version tags are immutable; `latest` is provided only as a
-convenience and should not be used for production installations.
+Upgrade with an explicitly selected OCI chart version. Helm keeps revision
+history for rollback. For raw-manifest installations, change both the raw
+manifest tag and container image tag to the same published version. Full
+version tags are immutable; `latest` is provided only as a convenience and
+should not be used for production installations.
 
 ## License
 

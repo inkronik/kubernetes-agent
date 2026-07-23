@@ -1,0 +1,16 @@
+apiVersion: v2
+name: inkronik-kubernetes-agent
+description: Deploys the Inkronik Kubernetes Agent for cluster telemetry collection.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+home: https://github.com/inkronik/kubernetes-agent
+sources:
+  - https://github.com/inkronik/kubernetes-agent
+keywords:
+  - inkronik
+  - kubernetes
+  - observability
+  - telemetry
+annotations:
+  artifacthub.io/license: Apache-2.0

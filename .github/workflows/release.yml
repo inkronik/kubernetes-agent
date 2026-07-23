@@ -1,4 +1,4 @@
-name: Release container image
+name: Release artifacts
 
 on:
   release:
@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish GHCR image
+    name: Publish GHCR image and Helm chart
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -28,6 +28,11 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v5.0.1
+        with:
+          version: v3.21.1
+
       - name: Validate release tag
         id: version
         shell: bash
@@ -37,6 +42,9 @@ jobs:
           version="$(tr -d '\n' < VERSION)"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           test "$RELEASE_TAG" = "v${version}"
+          chart_metadata="$(helm show chart charts/inkronik-kubernetes-agent)"
+          test "$(sed -n 's/^version: //p' <<< "$chart_metadata")" = "$version"
+          test "$(sed -n 's/^appVersion: //p' <<< "$chart_metadata" | tr -d '"')" = "$version"
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
@@ -85,3 +93,23 @@ jobs:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+      - name: Package Helm chart
+        id: chart
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          helm lint --strict charts/inkronik-kubernetes-agent \
+            --set-string clusterName=release-validation
+          helm package charts/inkronik-kubernetes-agent --destination "$RUNNER_TEMP"
+          chart_path="$RUNNER_TEMP/inkronik-kubernetes-agent-${VERSION}.tgz"
+          test -f "$chart_path"
+          echo "path=$chart_path" >> "$GITHUB_OUTPUT"
+
+      - name: Log in Helm to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Push Helm chart
+        run: helm push "${{ steps.chart.outputs.path }}" oci://ghcr.io/inkronik/charts

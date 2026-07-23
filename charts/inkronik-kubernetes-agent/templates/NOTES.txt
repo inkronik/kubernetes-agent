@@ -1,0 +1,15 @@
+The Inkronik Kubernetes Agent is installed in {{ .Release.Namespace }}.
+
+Check the rollout:
+
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "inkronik-kubernetes-agent.fullname" . }}
+
+Follow the logs:
+
+  kubectl -n {{ .Release.Namespace }} logs deployment/{{ include "inkronik-kubernetes-agent.fullname" . }} --follow
+
+Run the image-version test:
+
+  helm test {{ .Release.Name }} --namespace {{ .Release.Namespace }}
+
+The agent reads its ingest key from Secret {{ .Values.ingestSecret.name | quote }}, key {{ .Values.ingestSecret.key | quote }}.

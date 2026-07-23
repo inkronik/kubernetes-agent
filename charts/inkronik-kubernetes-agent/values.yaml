@@ -1,0 +1,84 @@
+image:
+  repository: ghcr.io/inkronik/kubernetes-agent
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+clusterName: ""
+collectorUrl: https://collector.inkronik.codemask.dev
+environment: prod
+clusterProvider: kubernetes
+applicationId: ""
+
+namespaces: []
+eventTypes:
+  - Warning
+
+metricsIntervalSeconds: 30
+eventSyncIntervalSeconds: 30
+initialEventLookbackSeconds: 300
+requestTimeoutSeconds: 10
+
+ingestSecret:
+  name: inkronik-k8s-agent
+  key: INKRONIK_INGEST_API_KEY
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  labels: {}
+
+rbac:
+  create: true
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+health:
+  port: 8080
+  readinessProbe:
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 1
+    failureThreshold: 3
+  livenessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 20
+    timeoutSeconds: 1
+    failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+priorityClassName: ""
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+tests:
+  enabled: true
+
+nameOverride: ""
+fullnameOverride: ""

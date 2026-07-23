@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "inkronik-kubernetes-agent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "inkronik-kubernetes-agent.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "inkronik-kubernetes-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "inkronik-kubernetes-agent.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "inkronik-kubernetes-agent.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: agent
+          image: {{ include "inkronik-kubernetes-agent.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: INKRONIK_COLLECTOR_URL
+              value: {{ .Values.collectorUrl | quote }}
+            - name: INKRONIK_CLUSTER_NAME
+              value: {{ required "clusterName is required" .Values.clusterName | quote }}
+            - name: INKRONIK_ENVIRONMENT
+              value: {{ .Values.environment | quote }}
+            - name: INKRONIK_CLUSTER_PROVIDER
+              value: {{ .Values.clusterProvider | quote }}
+            {{- with .Values.applicationId }}
+            - name: INKRONIK_APPLICATION_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.namespaces }}
+            - name: INKRONIK_NAMESPACES
+              value: {{ join "," .Values.namespaces | quote }}
+            {{- end }}
+            - name: INKRONIK_EVENT_TYPES
+              value: {{ join "," .Values.eventTypes | quote }}
+            - name: INKRONIK_METRICS_INTERVAL_SECONDS
+              value: {{ .Values.metricsIntervalSeconds | quote }}
+            - name: INKRONIK_EVENT_SYNC_INTERVAL_SECONDS
+              value: {{ .Values.eventSyncIntervalSeconds | quote }}
+            - name: INKRONIK_INITIAL_EVENT_LOOKBACK_SECONDS
+              value: {{ .Values.initialEventLookbackSeconds | quote }}
+            - name: INKRONIK_REQUEST_TIMEOUT_SECONDS
+              value: {{ .Values.requestTimeoutSeconds | quote }}
+            - name: INKRONIK_HEALTH_ADDR
+              value: {{ printf ":%d" (int .Values.health.port) | quote }}
+            - name: INKRONIK_INGEST_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ingestSecret.name | quote }}
+                  key: {{ .Values.ingestSecret.key | quote }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: {{ .Values.health.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.health.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.health.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.health.readinessProbe.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: {{ .Values.health.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.health.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.health.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.health.livenessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,155 @@
+# Inkronik Kubernetes Agent Helm chart
+
+This chart installs one Inkronik Kubernetes Agent with cluster-wide, read-only
+access to the Kubernetes resources needed for telemetry collection.
+
+## Prerequisites
+
+- Kubernetes cluster access;
+- Helm 3;
+- an Inkronik cluster-agent ingest key;
+- Metrics Server for node and pod resource metrics.
+
+## Install
+
+Create the namespace and the Secret outside Helm:
+
+```sh
+export CLUSTER_NAME=my-production-cluster
+export INKRONIK_INGEST_API_KEY=ik_live_prefix_secret
+
+kubectl create namespace inkronik \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n inkronik create secret generic inkronik-k8s-agent \
+  --from-literal=INKRONIK_INGEST_API_KEY="$INKRONIK_INGEST_API_KEY" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Install the versioned OCI chart:
+
+```sh
+helm upgrade --install inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.0.0 \
+  --namespace inkronik \
+  --create-namespace \
+  --set-string clusterName="$CLUSTER_NAME" \
+  --wait
+```
+
+The ingest key is never accepted as a chart value. The Deployment references
+the existing `inkronik-k8s-agent` Secret by default, which keeps the key out of
+the chart source and Helm release values.
+
+## Configuration
+
+| Value | Description | Default |
+| --- | --- | --- |
+| `clusterName` | Stable cluster name; required | `""` |
+| `collectorUrl` | Inkronik Collector base URL | `https://collector.inkronik.codemask.dev` |
+| `environment` | Telemetry environment | `prod` |
+| `clusterProvider` | Cluster provider label | `kubernetes` |
+| `applicationId` | Optional legacy batch-owner application UUID | `""` |
+| `namespaces` | Namespace allowlist; empty watches all namespaces | `[]` |
+| `eventTypes` | Kubernetes event types to collect | `[Warning]` |
+| `ingestSecret.name` | Existing Secret name | `inkronik-k8s-agent` |
+| `ingestSecret.key` | Existing Secret data key | `INKRONIK_INGEST_API_KEY` |
+| `image.repository` | Agent image repository | `ghcr.io/inkronik/kubernetes-agent` |
+| `image.tag` | Image tag; empty uses chart `appVersion` | `""` |
+| `image.digest` | Optional immutable `sha256:` image digest | `""` |
+| `image.pullPolicy` | Kubernetes image pull policy | `IfNotPresent` |
+| `imagePullSecrets` | Private registry pull Secret references | `[]` |
+| `serviceAccount.create` | Create the agent ServiceAccount | `true` |
+| `serviceAccount.name` | ServiceAccount override or externally managed name | `""` |
+| `rbac.create` | Create ClusterRole and ClusterRoleBinding | `true` |
+| `resources` | Agent resource requests and limits | See `values.yaml` |
+| `podSecurityContext` | Pod-level security context | Non-root UID/GID `65532` |
+| `securityContext` | Container security context | Read-only, no privilege escalation or capabilities |
+| `nodeSelector` | Pod node selector | `{}` |
+| `tolerations` | Pod tolerations | `[]` |
+| `affinity` | Pod affinity rules | `{}` |
+| `priorityClassName` | Optional priority class | `""` |
+| `tests.enabled` | Render the `helm test` version check | `true` |
+
+All supported values and validation constraints are defined in
+[`values.yaml`](values.yaml) and [`values.schema.json`](values.schema.json).
+
+### Namespace allowlist
+
+```sh
+helm upgrade inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.0.0 \
+  --namespace inkronik \
+  --reuse-values \
+  --set 'namespaces={payments,orders}' \
+  --wait
+```
+
+### Custom Collector
+
+```sh
+helm upgrade inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.0.0 \
+  --namespace inkronik \
+  --reuse-values \
+  --set-string collectorUrl=https://collector.example.internal \
+  --wait
+```
+
+### Externally managed access
+
+When platform administrators provide the ServiceAccount and RBAC separately:
+
+```sh
+helm upgrade --install inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.0.0 \
+  --namespace inkronik \
+  --set-string clusterName="$CLUSTER_NAME" \
+  --set serviceAccount.create=false \
+  --set-string serviceAccount.name=platform-agent \
+  --set rbac.create=false \
+  --wait
+```
+
+The externally managed account must have the permissions shown in the chart's
+`templates/clusterrole.yaml`.
+
+## Verify
+
+```sh
+kubectl -n inkronik rollout status deployment/inkronik-kubernetes-agent
+kubectl -n inkronik logs deployment/inkronik-kubernetes-agent --follow
+helm test inkronik-kubernetes-agent --namespace inkronik
+```
+
+## Upgrade and rollback
+
+Upgrade by specifying a new immutable chart version:
+
+```sh
+helm upgrade inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.1.0 \
+  --namespace inkronik \
+  --reuse-values \
+  --wait
+```
+
+Inspect revisions and roll back when necessary:
+
+```sh
+helm history inkronik-kubernetes-agent --namespace inkronik
+helm rollback inkronik-kubernetes-agent 1 --namespace inkronik --wait
+```
+
+## Uninstall
+
+```sh
+helm uninstall inkronik-kubernetes-agent --namespace inkronik
+```
+
+The externally created ingest Secret and namespace remain after uninstall.
