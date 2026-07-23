@@ -1,0 +1,4 @@
+bin/
+/inkronik-k8s-agent
+coverage.out
+.DS_Store
