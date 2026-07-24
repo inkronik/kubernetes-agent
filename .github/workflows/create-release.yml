@@ -3,16 +3,6 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      increment:
-        description: Version increment; current releases the version already in VERSION
-        required: true
-        default: current
-        type: choice
-        options:
-          - current
-          - patch
-          - minor
-          - major
       branch:
         description: Stable releases use main; prereleases use rc
         required: true
@@ -67,7 +57,6 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dry_run }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INCREMENT: ${{ inputs.increment }}
           RELEASE_BRANCH: ${{ inputs.branch }}
         run: |
           DRY_RUN_ARGS=()
@@ -75,20 +64,13 @@ jobs:
             DRY_RUN_ARGS=(--dry-run)
           fi
 
-          case "$RELEASE_BRANCH:$INCREMENT" in
-            main:current)
-              bun run release -- --ci --no-increment "${DRY_RUN_ARGS[@]}"
-              ;;
-            main:patch|main:minor|main:major)
-              bun run release -- --ci "$INCREMENT" "${DRY_RUN_ARGS[@]}"
-              ;;
-            rc:current)
-              bun run release -- --ci --preRelease=rc "${DRY_RUN_ARGS[@]}"
-              ;;
-            rc:patch|rc:minor|rc:major)
-              bun run release -- --ci "$INCREMENT" --preRelease=rc "${DRY_RUN_ARGS[@]}"
-              ;;
-          esac
+          if [[ "$RELEASE_BRANCH" == "main" ]] && ! git describe --tags --match='v[0-9]*' --abbrev=0 >/dev/null 2>&1; then
+            bun run release -- --ci --no-increment "${DRY_RUN_ARGS[@]}"
+          elif [[ "$RELEASE_BRANCH" == "rc" ]]; then
+            bun run release -- --ci --preRelease=rc "${DRY_RUN_ARGS[@]}"
+          else
+            bun run release -- --ci "${DRY_RUN_ARGS[@]}"
+          fi
 
       - name: Read released version
         id: version
