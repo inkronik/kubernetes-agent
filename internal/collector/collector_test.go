@@ -144,7 +144,11 @@ func TestCollectMetricsIncludesClusterStateSignals(t *testing.T) {
 			},
 		),
 	}
-	collector := New(client, ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"}, nil, []string{"Warning"})
+	collector := New(Options{
+		Client:     client,
+		Cluster:    ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"},
+		EventTypes: []string{"Warning"},
+	})
 
 	signals, err := collector.CollectMetrics(context.Background())
 	if err != nil {
@@ -247,7 +251,11 @@ func TestCollectMetricsKeepsPodSignalsWhenOptionalResourceListsFail(t *testing.T
 			},
 		),
 	}
-	collector := New(client, ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"}, nil, []string{"Warning"})
+	collector := New(Options{
+		Client:     client,
+		Cluster:    ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"},
+		EventTypes: []string{"Warning"},
+	})
 
 	signals, err := collector.CollectMetrics(context.Background())
 	if err != nil {
@@ -269,12 +277,10 @@ func TestCollectMetricsKeepsPodSignalsWhenOptionalResourceListsFail(t *testing.T
 }
 
 func TestContainerResourceSignalsPreservePartialAndUnconfiguredContainers(t *testing.T) {
-	collector := New(
-		&agentk8s.Client{},
-		ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"},
-		nil,
-		nil,
-	)
+	collector := New(Options{
+		Client:  &agentk8s.Client{},
+		Cluster: ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"},
+	})
 	pod := corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "api-7d9", Namespace: "default"},
 		Spec: corev1.PodSpec{
@@ -371,7 +377,12 @@ func TestCollectEventsFiltersByTypeAndNamespace(t *testing.T) {
 		),
 		Metrics: metricsfake.NewSimpleClientset(),
 	}
-	collector := New(client, ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"}, []string{"default"}, []string{"Warning"})
+	collector := New(Options{
+		Client:     client,
+		Cluster:    ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"},
+		Namespaces: []string{"default"},
+		EventTypes: []string{"Warning"},
+	})
 
 	signals, _, err := collector.CollectEvents(context.Background(), now.Add(-time.Hour))
 	if err != nil {

@@ -24,18 +24,12 @@ const agentSource = "inkronik-k8s-agent"
 const ingestAPIKeyPrefix = "ik_live_"
 const ingestAPIKeyVisiblePrefixLength = 11
 
-type ClusterMetadata struct {
-	Name         string
-	Provider     string
-	Environment  string
-	AgentVersion string
-}
-
 type Collector struct {
-	client            *k8s.Client
-	cluster           ClusterMetadata
-	namespaces        []string
-	allowedEventTypes map[string]struct{}
+	client             *k8s.Client
+	cluster            ClusterMetadata
+	namespaces         []string
+	allowedEventTypes  map[string]struct{}
+	enableKubeletStats bool
 	// Last revision seen per workload, so a rollout is reported once rather than on every collection tick. The
 	// runner drives collection from a single goroutine today; the mutex keeps that from being load-bearing.
 	revisionsMutex      sync.Mutex
@@ -77,19 +71,20 @@ type hpaAttributesInput struct {
 	applicationAttributes map[string]string
 }
 
-func New(client *k8s.Client, cluster ClusterMetadata, namespaces []string, eventTypes []string) *Collector {
-	allowedTypes := make(map[string]struct{}, len(eventTypes))
-	for _, eventType := range eventTypes {
+func New(options Options) *Collector {
+	allowedTypes := make(map[string]struct{}, len(options.EventTypes))
+	for _, eventType := range options.EventTypes {
 		if eventType != "" {
 			allowedTypes[eventType] = struct{}{}
 		}
 	}
 
 	return &Collector{
-		client:              client,
-		cluster:             cluster,
-		namespaces:          slices.Clone(namespaces),
+		client:              options.Client,
+		cluster:             options.Cluster,
+		namespaces:          slices.Clone(options.Namespaces),
 		allowedEventTypes:   allowedTypes,
+		enableKubeletStats:  options.EnableKubeletStats,
 		revisionsByWorkload: map[string]string{},
 	}
 }
@@ -264,6 +259,9 @@ func (c *Collector) nodeResourceSignals(input nodeResourceSignalsInput) []model.
 		c.metricSignal(input.timestamp, "k8s.node.memory.allocatable", "bytes", float64(node.Status.Allocatable.Memory().Value()), attributes),
 		c.metricSignal(input.timestamp, "k8s.node.ephemeral_storage.capacity", "bytes", float64(node.Status.Capacity.StorageEphemeral().Value()), attributes),
 		c.metricSignal(input.timestamp, "k8s.node.ephemeral_storage.allocatable", "bytes", float64(node.Status.Allocatable.StorageEphemeral().Value()), attributes),
+	}
+	if !c.enableKubeletStats {
+		return signals
 	}
 
 	summary, err := c.client.NodeStatsSummary(input.ctx, node.Name)

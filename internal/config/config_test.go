@@ -1,6 +1,53 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestLoadUsesHostedCollectorByDefault(t *testing.T) {
+	t.Setenv("INKRONIK_COLLECTOR_URL", "")
+	t.Setenv("INKRONIK_INGEST_API_KEY", "ik_live_prefix_secret")
+	t.Setenv("INKRONIK_CLUSTER_NAME", "staging-eu")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected config to load: %v", err)
+	}
+
+	if cfg.CollectorURL != defaultCollectorURL {
+		t.Fatalf("expected default collector URL %q, got %q", defaultCollectorURL, cfg.CollectorURL)
+	}
+	if !cfg.KubeletStatsEnabled {
+		t.Fatal("expected kubelet stats to be enabled by default")
+	}
+}
+
+func TestLoadRejectsNonHTTPSCollector(t *testing.T) {
+	t.Setenv("INKRONIK_COLLECTOR_URL", "http://collector.example.test")
+	t.Setenv("INKRONIK_INGEST_API_KEY", "ik_live_prefix_secret")
+	t.Setenv("INKRONIK_CLUSTER_NAME", "staging-eu")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "must be a valid HTTPS URL") {
+		t.Fatalf("expected HTTPS validation error, got %v", err)
+	}
+}
+
+func TestLoadAllowsKubeletStatsOptOut(t *testing.T) {
+	t.Setenv("INKRONIK_INGEST_API_KEY", "ik_live_prefix_secret")
+	t.Setenv("INKRONIK_CLUSTER_NAME", "staging-eu")
+	t.Setenv("INKRONIK_KUBELET_STATS_ENABLED", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected config to load: %v", err)
+	}
+
+	if cfg.KubeletStatsEnabled {
+		t.Fatal("expected kubelet stats opt-out to be disabled")
+	}
+}
 
 func TestLoadAllowsApplicationScopedKeysWithoutApplicationID(t *testing.T) {
 	t.Setenv("INKRONIK_COLLECTOR_URL", "https://collector.inkronik.test/")

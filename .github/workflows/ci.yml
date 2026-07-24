@@ -20,16 +20,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Set up Go
-        uses: actions/setup-go@v6.4.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: .go-version
           cache-dependency-path: go.sum
 
       - name: Set up Helm
-        uses: azure/setup-helm@v5.0.1
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.21.1
 
@@ -45,6 +45,15 @@ jobs:
         run: |
           go mod download
           go mod verify
+
+      - name: Scan dependencies and secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: 1
 
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
@@ -95,11 +104,19 @@ jobs:
             --set-string image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             > "$RUNNER_TEMP/chart-custom.yaml"
 
+          helm template no-kubelet-stats charts/inkronik-kubernetes-agent \
+            --namespace inkronik \
+            --set-string clusterName=ci-cluster \
+            --set kubeletStats.enabled=false \
+            > "$RUNNER_TEMP/chart-no-kubelet-stats.yaml"
+
           grep -Fq "image: \"ghcr.io/inkronik/kubernetes-agent:${VERSION}\"" "$RUNNER_TEMP/chart-default.yaml"
           grep -Fq 'value: "https://collector.inkronik.codemask.dev"' "$RUNNER_TEMP/chart-default.yaml"
           grep -Fq 'runAsNonRoot: true' "$RUNNER_TEMP/chart-default.yaml"
           grep -Fq 'readOnlyRootFilesystem: true' "$RUNNER_TEMP/chart-default.yaml"
           grep -Fq 'secretKeyRef:' "$RUNNER_TEMP/chart-default.yaml"
+          grep -Fq 'name: INKRONIK_KUBELET_STATS_ENABLED' "$RUNNER_TEMP/chart-default.yaml"
+          grep -Fq 'value: "true"' "$RUNNER_TEMP/chart-default.yaml"
           grep -Fq 'value: "payments,orders"' "$RUNNER_TEMP/chart-custom.yaml"
           grep -Fq 'serviceAccountName: platform-agent' "$RUNNER_TEMP/chart-custom.yaml"
           grep -Fq 'image: "ghcr.io/inkronik/kubernetes-agent@sha256:aaaaaaaa' "$RUNNER_TEMP/chart-custom.yaml"
@@ -109,10 +126,26 @@ jobs:
             exit 1
           fi
 
+          grep -Fq 'nodes/proxy' "$RUNNER_TEMP/chart-default.yaml"
+
+          if grep -Fq 'nodes/proxy' "$RUNNER_TEMP/chart-no-kubelet-stats.yaml"; then
+            echo "Reduced-permission chart rendered kubelet proxy access" >&2
+            exit 1
+          fi
+
           if grep -Eq '^kind: (ClusterRole|ClusterRoleBinding|ServiceAccount)$' "$RUNNER_TEMP/chart-custom.yaml"; then
             echo "Externally managed RBAC profile rendered an owned access resource" >&2
             exit 1
           fi
+
+      - name: Scan rendered Kubernetes manifests
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: ${{ runner.temp }}/chart-default.yaml
+          trivyignores: .trivyignore
+          severity: HIGH,CRITICAL
+          exit-code: 1
 
       - name: Package Helm chart
         env:
@@ -123,10 +156,10 @@ jobs:
           helm show chart "$RUNNER_TEMP/inkronik-kubernetes-agent-${VERSION}.tgz"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.2.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Build container image
-        uses: docker/build-push-action@v7.2.0
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           push: false

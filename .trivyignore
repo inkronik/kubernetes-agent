@@ -1,0 +1,4 @@
+# Accepted: complete default telemetry requires kubelet /stats/summary through
+# the API Server proxy. Users can remove this permission by setting
+# kubeletStats.enabled=false.
+AVD-KSV-0047
