@@ -34,6 +34,10 @@ serviceAccount:
 rbac:
   create: true
 
+# Disable to omit filesystem/network stats and the broad nodes/proxy permission.
+kubeletStats:
+  enabled: true
+
 podAnnotations: {}
 podLabels: {}
 

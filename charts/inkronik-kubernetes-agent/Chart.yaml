@@ -13,4 +13,4 @@ keywords:
   - observability
   - telemetry
 annotations:
-  artifacthub.io/license: Apache-2.0
+  artifacthub.io/license: MIT

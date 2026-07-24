@@ -63,6 +63,8 @@ spec:
               value: {{ .Values.initialEventLookbackSeconds | quote }}
             - name: INKRONIK_REQUEST_TIMEOUT_SECONDS
               value: {{ .Values.requestTimeoutSeconds | quote }}
+            - name: INKRONIK_KUBELET_STATS_ENABLED
+              value: {{ .Values.kubeletStats.enabled | quote }}
             - name: INKRONIK_HEALTH_ADDR
               value: {{ printf ":%d" (int .Values.health.port) | quote }}
             - name: INKRONIK_INGEST_API_KEY

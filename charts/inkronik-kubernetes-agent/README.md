@@ -63,6 +63,7 @@ the chart source and Helm release values.
 | `serviceAccount.create` | Create the agent ServiceAccount | `true` |
 | `serviceAccount.name` | ServiceAccount override or externally managed name | `""` |
 | `rbac.create` | Create ClusterRole and ClusterRoleBinding | `true` |
+| `kubeletStats.enabled` | Collect filesystem/network stats through `nodes/proxy` RBAC | `true` |
 | `resources` | Agent resource requests and limits | See `values.yaml` |
 | `podSecurityContext` | Pod-level security context | Non-root UID/GID `65532` |
 | `securityContext` | Container security context | Read-only, no privilege escalation or capabilities |
@@ -89,6 +90,9 @@ helm upgrade inkronik-kubernetes-agent \
 
 ### Custom Collector
 
+Collector overrides must use HTTPS. When omitted, the chart uses the hosted
+Inkronik Collector.
+
 ```sh
 helm upgrade inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
@@ -96,6 +100,24 @@ helm upgrade inkronik-kubernetes-agent \
   --namespace inkronik \
   --reuse-values \
   --set-string collectorUrl=https://collector.example.internal \
+  --wait
+```
+
+### Kubelet stats and reduced-permission mode
+
+Filesystem and network stats require access to the kubelet API through the
+Kubernetes API Server proxy. This grants the agent ServiceAccount the broad
+`nodes/proxy` permission. The feature is enabled by default so a standard
+installation collects the complete telemetry set. To trade those metrics for a
+smaller RBAC surface, disable it:
+
+```sh
+helm upgrade inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.0.0 \
+  --namespace inkronik \
+  --reuse-values \
+  --set kubeletStats.enabled=false \
   --wait
 ```
 
@@ -116,7 +138,8 @@ helm upgrade --install inkronik-kubernetes-agent \
 ```
 
 The externally managed account must have the permissions shown in the chart's
-`templates/clusterrole.yaml`.
+`templates/clusterrole.yaml`. The `nodes/proxy` permission is required only
+when `kubeletStats.enabled=true`.
 
 ## Verify
 

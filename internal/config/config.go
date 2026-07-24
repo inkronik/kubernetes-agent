@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/inkronik/kubernetes-agent/internal/version"
 )
+
+const defaultCollectorURL = "https://collector.inkronik.codemask.dev"
 
 type Config struct {
 	CollectorURL         string
@@ -27,13 +30,14 @@ type Config struct {
 	EventSyncInterval    time.Duration
 	InitialEventLookback time.Duration
 	RequestTimeout       time.Duration
+	KubeletStatsEnabled  bool
 }
 
 func Load() (Config, error) {
 	parseErrors := []string{}
 
 	cfg := Config{
-		CollectorURL:         strings.TrimRight(os.Getenv("INKRONIK_COLLECTOR_URL"), "/"),
+		CollectorURL:         strings.TrimRight(defaultString(os.Getenv("INKRONIK_COLLECTOR_URL"), defaultCollectorURL), "/"),
 		IngestAPIKey:         os.Getenv("INKRONIK_INGEST_API_KEY"),
 		ApplicationID:        os.Getenv("INKRONIK_APPLICATION_ID"),
 		Environment:          defaultString(os.Getenv("INKRONIK_ENVIRONMENT"), "prod"),
@@ -48,6 +52,7 @@ func Load() (Config, error) {
 		EventSyncInterval:    durationFromSeconds("INKRONIK_EVENT_SYNC_INTERVAL_SECONDS", 30, &parseErrors),
 		InitialEventLookback: durationFromSeconds("INKRONIK_INITIAL_EVENT_LOOKBACK_SECONDS", 300, &parseErrors),
 		RequestTimeout:       durationFromSeconds("INKRONIK_REQUEST_TIMEOUT_SECONDS", 10, &parseErrors),
+		KubeletStatsEnabled:  boolFromEnv("INKRONIK_KUBELET_STATS_ENABLED", true, &parseErrors),
 	}
 
 	if len(parseErrors) > 0 {
@@ -64,8 +69,9 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	validationErrors := []string{}
 
-	if c.CollectorURL == "" {
-		validationErrors = append(validationErrors, "INKRONIK_COLLECTOR_URL is required")
+	collectorURL, collectorURLError := url.ParseRequestURI(c.CollectorURL)
+	if collectorURLError != nil || collectorURL.Scheme != "https" || collectorURL.Host == "" {
+		validationErrors = append(validationErrors, "INKRONIK_COLLECTOR_URL must be a valid HTTPS URL")
 	}
 
 	if c.IngestAPIKey == "" {
@@ -93,6 +99,21 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+func boolFromEnv(key string, fallback bool, validationErrors *[]string) bool {
+	rawValue := os.Getenv(key)
+	if rawValue == "" {
+		return fallback
+	}
+
+	value, err := strconv.ParseBool(rawValue)
+	if err != nil {
+		*validationErrors = append(*validationErrors, fmt.Sprintf("%s must be a boolean, got %q", key, rawValue))
+		return false
+	}
+
+	return value
 }
 
 func durationFromSeconds(key string, fallback int, validationErrors *[]string) time.Duration {

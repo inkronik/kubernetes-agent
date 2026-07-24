@@ -28,7 +28,9 @@ func rolloutDeployment(revision string, image string) appsv1.Deployment {
 }
 
 func rolloutCollector() *Collector {
-	return New(nil, ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"}, nil, nil)
+	return New(Options{
+		Cluster: ClusterMetadata{Name: "local", Provider: "kind", Environment: "test", AgentVersion: "test"},
+	})
 }
 
 // The agent cannot distinguish "just started" from "deployed while I was down", so the first sighting only

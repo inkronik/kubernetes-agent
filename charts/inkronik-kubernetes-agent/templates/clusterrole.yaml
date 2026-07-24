@@ -9,9 +9,11 @@ rules:
   - apiGroups: [""]
     resources: ["events", "nodes", "pods"]
     verbs: ["get", "list", "watch"]
+  {{- if .Values.kubeletStats.enabled }}
   - apiGroups: [""]
     resources: ["nodes/proxy"]
     verbs: ["get"]
+  {{- end }}
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets"]
     verbs: ["get", "list", "watch"]

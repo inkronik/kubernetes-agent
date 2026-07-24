@@ -82,6 +82,8 @@ spec:
               value: replace-with-cluster-name
             - name: INKRONIK_ENVIRONMENT
               value: prod
+            - name: INKRONIK_KUBELET_STATS_ENABLED
+              value: 'true'
             - name: INKRONIK_HEALTH_ADDR
               value: :8080
             - name: INKRONIK_INGEST_API_KEY

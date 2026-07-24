@@ -81,6 +81,12 @@ proxy, private registry mirror, or custom Collector URL.
 - ReplicaSet replica metrics;
 - HorizontalPodAutoscaler metrics.
 
+Kubelet filesystem and network metrics are enabled by default. Kubernetes
+authorizes the API Server proxy request with the broad `nodes/proxy` permission.
+Set `kubeletStats.enabled=false` in the Helm chart, or
+`INKRONIK_KUBELET_STATS_ENABLED=false` when running the binary directly, to
+disable those metrics and remove the permission from chart-managed RBAC.
+
 The agent reads only the Kubernetes resources listed in
 [`deploy/kubernetes.yaml`](deploy/kubernetes.yaml). It does not require write
 permissions to cluster resources.
@@ -89,12 +95,13 @@ permissions to cluster resources.
 
 Required environment variables:
 
-- `INKRONIK_COLLECTOR_URL` — Collector base URL without a trailing slash;
 - `INKRONIK_INGEST_API_KEY` — cluster-agent ingest key;
 - `INKRONIK_CLUSTER_NAME` — stable, human-readable cluster name.
 
 Optional environment variables:
 
+- `INKRONIK_COLLECTOR_URL` — HTTPS Collector base URL without a trailing slash;
+  defaults to `https://collector.inkronik.codemask.dev`;
 - `INKRONIK_APPLICATION_ID` — legacy batch-owner application UUID; leave unset
   for cluster-agent keys;
 - `INKRONIK_ENVIRONMENT` — defaults to `prod`;
@@ -108,6 +115,9 @@ Optional environment variables:
 - `INKRONIK_EVENT_SYNC_INTERVAL_SECONDS` — defaults to `30`;
 - `INKRONIK_INITIAL_EVENT_LOOKBACK_SECONDS` — defaults to `300`;
 - `INKRONIK_REQUEST_TIMEOUT_SECONDS` — defaults to `10`.
+- `INKRONIK_KUBELET_STATS_ENABLED` — defaults to `true`; set to `false` to
+  disable filesystem and network stats. Chart-managed RBAC then omits the broad
+  `nodes/proxy` permission.
 
 See [`.env.example`](.env.example) for a local-development template.
 
@@ -173,4 +183,4 @@ should not be used for production installations.
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](LICENSE).
+MIT License. See [`LICENSE`](LICENSE).

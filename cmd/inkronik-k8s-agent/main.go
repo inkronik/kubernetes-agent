@@ -46,7 +46,13 @@ func main() {
 		AgentVersion: cfg.AgentVersion,
 	}
 
-	collectorInstance := collector.New(k8sClient, cluster, cfg.Namespaces, cfg.EventTypes)
+	collectorInstance := collector.New(collector.Options{
+		Client:             k8sClient,
+		Cluster:            cluster,
+		Namespaces:         cfg.Namespaces,
+		EventTypes:         cfg.EventTypes,
+		EnableKubeletStats: cfg.KubeletStatsEnabled,
+	})
 	senderInstance := sender.New(sender.ClientOptions{
 		BaseURL:       cfg.CollectorURL,
 		APIKey:        cfg.IngestAPIKey,
