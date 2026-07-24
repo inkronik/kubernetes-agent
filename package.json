@@ -1,0 +1,20 @@
+{
+  "name": "@inkronik/kubernetes-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Release tooling for the Inkronik Kubernetes Agent.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check:version": "bun scripts/version.ts check",
+    "release": "release-it"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inkronik/kubernetes-agent.git"
+  },
+  "devDependencies": {
+    "release-it": "20.2.1"
+  },
+  "packageManager": "bun@1.3.14"
+}

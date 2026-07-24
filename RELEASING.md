@@ -6,24 +6,38 @@ Releases publish a multi-platform image to
 authenticates with the repository's `GITHUB_TOKEN`; no long-lived registry
 credential is required.
 
-## Prepare a release
+## Automated release
 
-1. Update `VERSION` with an exact semantic version without the `v` prefix.
-2. Set `version` and `appVersion` in
-   `charts/inkronik-kubernetes-agent/Chart.yaml` to the same version.
-3. Update the image tag, chart version, and raw manifest URL in `README.md`, the
-   chart README, and `deploy/kubernetes.yaml`.
-4. Run `gofmt`, `go vet`, `go test -race`, Helm lint/render/package checks, and
-   a Docker build.
-5. Merge the changes to `main` and wait for CI to pass.
-6. Create and publish a GitHub release tagged `v<VERSION>` from the release
-   commit.
+Use **Actions > Release > Run workflow**. The workflow uses `release-it` to
+calculate the version, synchronize every version reference, create the release
+commit and tag, publish the GitHub Release, and then publish the image and chart.
 
-Publishing the GitHub release triggers the release workflow. It validates the
-tag, chart version, and chart app version against `VERSION`; builds
-`linux/amd64` and `linux/arm64`; pushes immutable semantic-version image tags
-plus `latest`; attaches image provenance and an SBOM; and publishes the matching
-OCI chart only after the image succeeds.
+Choose these inputs:
+
+- `branch: main` for stable releases. Select `patch`, `minor`, or `major` to
+  calculate the next version. For the first `1.0.0` release, select `current`
+  because the repository already contains that version.
+- `branch: rc` for prereleases. The workflow adds or advances the prerelease
+  identifier and marks the artifact release as a prerelease.
+- Keep `dry_run: true` for the first run. Review the log, then run the same
+  inputs with `dry_run: false` to create and publish the release.
+
+The selected branch must exist, be up to date, and have passing CI. A version
+bump pushes a `chore(release): v<VERSION>` commit and every real run pushes an
+annotated `v<VERSION>` tag. With `increment: current`, the already-consistent
+branch tip is tagged without creating an empty commit. Do not edit `VERSION`,
+chart metadata, deployment images, or documentation by hand; the release hook
+updates them together and verifies consistency before the commit is created.
+
+The artifact stage validates the tag and chart metadata against `VERSION`,
+builds `linux/amd64` and `linux/arm64`, pushes the immutable full-version image,
+attaches image provenance and an SBOM, and publishes the matching OCI chart.
+Stable releases also move the major, major/minor, and `latest` image tags;
+prereleases do not.
+
+The artifact workflow can still be triggered by publishing a GitHub Release
+manually. The automated workflow invokes it directly because events created by
+the repository `GITHUB_TOKEN` do not start another workflow run.
 
 Do not overwrite or recreate an existing version tag.
 
