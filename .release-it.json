@@ -17,6 +17,15 @@
     "publish": false,
     "skipChecks": true
   },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": {
+        "name": "conventionalcommits",
+        "bumpStrict": true
+      },
+      "infile": false
+    }
+  },
   "hooks": {
     "before:init": "bun run check:version",
     "after:bump": "bun scripts/version.ts sync ${version}",

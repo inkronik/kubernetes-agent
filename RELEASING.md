@@ -14,20 +14,28 @@ commit and tag, publish the GitHub Release, and then publish the image and chart
 
 Choose these inputs:
 
-- `branch: main` for stable releases. Select `patch`, `minor`, or `major` to
-  calculate the next version. For the first `1.0.0` release, select `current`
-  because the repository already contains that version.
+- `branch: main` for stable releases. The first run automatically publishes the
+  existing, consistent `1.0.0`; later runs calculate the next version from
+  commits since the latest tag.
 - `branch: rc` for prereleases. The workflow adds or advances the prerelease
   identifier and marks the artifact release as a prerelease.
 - Keep `dry_run: true` for the first run. Review the log, then run the same
   inputs with `dry_run: false` to create and publish the release.
 
+The workflow calculates versions from Conventional Commits: `fix`, `perf`, and
+`revert` create a patch release; `feat` creates a minor release; and a
+`BREAKING CHANGE` footer or `!` after the type creates a major release.
+Documentation, test, build, CI, refactor, style, and chore-only changes do not
+create a release. If there are no releasable commits, the workflow stops before
+tagging or publishing.
+
 The selected branch must exist, be up to date, and have passing CI. A version
 bump pushes a `chore(release): v<VERSION>` commit and every real run pushes an
-annotated `v<VERSION>` tag. With `increment: current`, the already-consistent
-branch tip is tagged without creating an empty commit. Do not edit `VERSION`,
-chart metadata, deployment images, or documentation by hand; the release hook
-updates them together and verifies consistency before the commit is created.
+annotated `v<VERSION>` tag. During the tagless first release, the already
+consistent branch tip is tagged without creating an empty commit. Do not edit
+`VERSION`, chart metadata, deployment images, or documentation by hand; the
+release hook updates them together and verifies consistency before the commit
+is created.
 
 The artifact stage validates the tag and chart metadata against `VERSION`,
 builds `linux/amd64` and `linux/arm64`, pushes the immutable full-version image,
