@@ -55,6 +55,9 @@ the chart source and Helm release values.
 | `eventTypes` | Kubernetes event types to collect | `[Warning]` |
 | `ingestSecret.name` | Existing Secret name | `inkronik-k8s-agent` |
 | `ingestSecret.key` | Existing Secret data key | `INKRONIK_INGEST_API_KEY` |
+| `secretsStoreCsi.enabled` | Mount a Secrets Store CSI `SecretProviderClass` to synchronize the ingest Secret | `false` |
+| `secretsStoreCsi.secretProviderClassName` | Existing `SecretProviderClass` name; required when CSI integration is enabled | `""` |
+| `secretsStoreCsi.mountPath` | Read-only CSI mount path | `/mnt/secrets-store` |
 | `image.repository` | Agent image repository | `ghcr.io/inkronik/kubernetes-agent` |
 | `image.tag` | Image tag; empty uses chart `appVersion` | `""` |
 | `image.digest` | Optional immutable `sha256:` image digest | `""` |
@@ -140,6 +143,29 @@ helm upgrade --install inkronik-kubernetes-agent \
 The externally managed account must have the permissions shown in the chart's
 `templates/clusterrole.yaml`. The `nodes/proxy` permission is required only
 when `kubeletStats.enabled=true`.
+
+### Secrets Store CSI
+
+When the ingest Secret is synchronized by an existing Secrets Store CSI
+`SecretProviderClass`, enable its mount on the agent pod. Mounting the provider
+volume triggers synchronization of the Kubernetes Secret referenced by
+`ingestSecret`:
+
+```sh
+helm upgrade --install inkronik-kubernetes-agent \
+  oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
+  --version 1.0.0 \
+  --namespace inkronik \
+  --set-string clusterName="$CLUSTER_NAME" \
+  --set secretsStoreCsi.enabled=true \
+  --set-string secretsStoreCsi.secretProviderClassName=vault-development \
+  --set-string ingestSecret.name=vault-development \
+  --wait
+```
+
+The chart does not create the `SecretProviderClass`; keep it in the platform's
+secret-management configuration. Existing installations are unaffected because
+the integration is disabled by default.
 
 ## Verify
 

@@ -12,6 +12,7 @@
     "namespaces",
     "eventTypes",
     "ingestSecret",
+    "secretsStoreCsi",
     "serviceAccount",
     "rbac",
     "kubeletStats",
@@ -122,6 +123,23 @@
         "key": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "secretsStoreCsi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "secretProviderClassName", "mountPath"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "secretProviderClassName": {
+          "type": "string"
+        },
+        "mountPath": {
+          "type": "string",
+          "pattern": "^/"
         }
       }
     },

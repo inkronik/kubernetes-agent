@@ -123,6 +123,14 @@ jobs:
             --set kubeletStats.enabled=false \
             > "$RUNNER_TEMP/chart-no-kubelet-stats.yaml"
 
+          helm template secrets-store-csi charts/inkronik-kubernetes-agent \
+            --namespace inkronik \
+            --set-string clusterName=ci-cluster \
+            --set-string ingestSecret.name=vault-development \
+            --set secretsStoreCsi.enabled=true \
+            --set-string secretsStoreCsi.secretProviderClassName=vault-development \
+            > "$RUNNER_TEMP/chart-secrets-store-csi.yaml"
+
           grep -Fq "image: \"ghcr.io/inkronik/kubernetes-agent:${VERSION}\"" "$RUNNER_TEMP/chart-default.yaml"
           grep -Fq 'value: "https://collector.inkronik.codemask.dev"' "$RUNNER_TEMP/chart-default.yaml"
           grep -Fq 'runAsNonRoot: true' "$RUNNER_TEMP/chart-default.yaml"
@@ -133,6 +141,16 @@ jobs:
           grep -Fq 'value: "payments,orders"' "$RUNNER_TEMP/chart-custom.yaml"
           grep -Fq 'serviceAccountName: platform-agent' "$RUNNER_TEMP/chart-custom.yaml"
           grep -Fq 'image: "ghcr.io/inkronik/kubernetes-agent@sha256:aaaaaaaa' "$RUNNER_TEMP/chart-custom.yaml"
+          grep -Fq 'driver: secrets-store.csi.k8s.io' "$RUNNER_TEMP/chart-secrets-store-csi.yaml"
+          grep -Fq 'secretProviderClass: "vault-development"' "$RUNNER_TEMP/chart-secrets-store-csi.yaml"
+          grep -Fq 'mountPath: "/mnt/secrets-store"' "$RUNNER_TEMP/chart-secrets-store-csi.yaml"
+
+          if helm template invalid-csi charts/inkronik-kubernetes-agent \
+            --set-string clusterName=ci-cluster \
+            --set secretsStoreCsi.enabled=true >/dev/null 2>&1; then
+            echo "Secrets Store CSI rendered without a SecretProviderClass name" >&2
+            exit 1
+          fi
 
           if grep -Eq '^kind: Secret$|verbs:.*(create|update|patch|delete)' "$RUNNER_TEMP/chart-default.yaml"; then
             echo "Rendered chart contains a Secret or write-capable RBAC" >&2

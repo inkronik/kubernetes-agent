@@ -25,6 +25,13 @@ ingestSecret:
   name: inkronik-k8s-agent
   key: INKRONIK_INGEST_API_KEY
 
+# Enable when an external Secrets Store CSI SecretProviderClass synchronizes
+# ingestSecret. The mount is required to trigger secret synchronization.
+secretsStoreCsi:
+  enabled: false
+  secretProviderClassName: ""
+  mountPath: /mnt/secrets-store
+
 serviceAccount:
   create: true
   name: ""
