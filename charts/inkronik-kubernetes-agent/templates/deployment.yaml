@@ -94,6 +94,21 @@ spec:
             failureThreshold: {{ .Values.health.livenessProbe.failureThreshold }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.secretsStoreCsi.enabled }}
+          volumeMounts:
+            - name: secrets-store
+              mountPath: {{ .Values.secretsStoreCsi.mountPath | quote }}
+              readOnly: true
+          {{- end }}
+      {{- if .Values.secretsStoreCsi.enabled }}
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ required "secretsStoreCsi.secretProviderClassName is required when Secrets Store CSI is enabled" .Values.secretsStoreCsi.secretProviderClassName | quote }}
+      {{- end }}
       {{- with .Values.priorityClassName }}
       priorityClassName: {{ . | quote }}
       {{- end }}
