@@ -31,7 +31,7 @@ Install the versioned OCI chart:
 ```sh
 helm upgrade --install inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.0 \
+  --version 1.1.1 \
   --namespace inkronik \
   --create-namespace \
   --set-string clusterName="$CLUSTER_NAME" \
@@ -84,7 +84,7 @@ All supported values and validation constraints are defined in
 ```sh
 helm upgrade inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.0 \
+  --version 1.1.1 \
   --namespace inkronik \
   --reuse-values \
   --set 'namespaces={payments,orders}' \
@@ -99,7 +99,7 @@ Inkronik Collector.
 ```sh
 helm upgrade inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.0 \
+  --version 1.1.1 \
   --namespace inkronik \
   --reuse-values \
   --set-string collectorUrl=https://collector.example.internal \
@@ -117,7 +117,7 @@ smaller RBAC surface, disable it:
 ```sh
 helm upgrade inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.0 \
+  --version 1.1.1 \
   --namespace inkronik \
   --reuse-values \
   --set kubeletStats.enabled=false \
@@ -131,7 +131,7 @@ When platform administrators provide the ServiceAccount and RBAC separately:
 ```sh
 helm upgrade --install inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.0 \
+  --version 1.1.1 \
   --namespace inkronik \
   --set-string clusterName="$CLUSTER_NAME" \
   --set serviceAccount.create=false \
@@ -154,7 +154,7 @@ volume triggers synchronization of the Kubernetes Secret referenced by
 ```sh
 helm upgrade --install inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.0 \
+  --version 1.1.1 \
   --namespace inkronik \
   --set-string clusterName="$CLUSTER_NAME" \
   --set secretsStoreCsi.enabled=true \
