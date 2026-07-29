@@ -14,24 +14,34 @@ import (
 )
 
 type Client struct {
-	baseURL       string
-	apiKey        string
-	applicationID string
-	client        *http.Client
+	baseURL             string
+	apiKey              string
+	applicationID       string
+	maxRequestBodyBytes int
+	client              *http.Client
 }
 
 type ClientOptions struct {
-	BaseURL       string
-	APIKey        string
-	ApplicationID string
-	Timeout       time.Duration
+	BaseURL             string
+	APIKey              string
+	ApplicationID       string
+	MaxRequestBodyBytes int
+	Timeout             time.Duration
 }
 
+const defaultMaxRequestBodyBytes = 750_000
+
 func New(options ClientOptions) *Client {
+	maxRequestBodyBytes := options.MaxRequestBodyBytes
+	if maxRequestBodyBytes <= 0 {
+		maxRequestBodyBytes = defaultMaxRequestBodyBytes
+	}
+
 	return &Client{
-		baseURL:       strings.TrimRight(options.BaseURL, "/"),
-		apiKey:        options.APIKey,
-		applicationID: options.ApplicationID,
+		baseURL:             strings.TrimRight(options.BaseURL, "/"),
+		apiKey:              options.APIKey,
+		applicationID:       options.ApplicationID,
+		maxRequestBodyBytes: maxRequestBodyBytes,
 		client: &http.Client{
 			Timeout: options.Timeout,
 		},
@@ -43,7 +53,59 @@ func (c *Client) SendTelemetry(ctx context.Context, signals []model.TelemetrySig
 		return nil
 	}
 
-	return c.postJSON(ctx, "/v1/telemetry", model.TelemetryBatch{Signals: signals})
+	batches, err := telemetryBatches(signals, c.maxRequestBodyBytes)
+	if err != nil {
+		return err
+	}
+
+	for index, batch := range batches {
+		if err := c.postJSON(ctx, "/v1/telemetry", batch); err != nil {
+			return fmt.Errorf("send telemetry batch %d/%d: %w", index+1, len(batches), err)
+		}
+	}
+
+	return nil
+}
+
+func telemetryBatches(signals []model.TelemetrySignal, maxRequestBodyBytes int) ([]model.TelemetryBatch, error) {
+	const emptyBatchBytes = len(`{"signals":[]}`)
+
+	batches := make([]model.TelemetryBatch, 0, 1)
+	currentSignals := make([]model.TelemetrySignal, 0)
+	currentBytes := emptyBatchBytes
+
+	for index, signal := range signals {
+		encodedSignal, err := json.Marshal(signal)
+		if err != nil {
+			return nil, fmt.Errorf("marshal telemetry signal %d: %w", index+1, err)
+		}
+
+		signalBytes := len(encodedSignal)
+		if emptyBatchBytes+signalBytes > maxRequestBodyBytes {
+			return nil, fmt.Errorf("telemetry signal %d requires %d bytes and exceeds request body limit %d", index+1, emptyBatchBytes+signalBytes, maxRequestBodyBytes)
+		}
+
+		separatorBytes := 0
+		if len(currentSignals) > 0 {
+			separatorBytes = 1
+		}
+
+		if currentBytes+separatorBytes+signalBytes > maxRequestBodyBytes {
+			batches = append(batches, model.TelemetryBatch{Signals: currentSignals})
+			currentSignals = make([]model.TelemetrySignal, 0)
+			currentBytes = emptyBatchBytes
+			separatorBytes = 0
+		}
+
+		currentSignals = append(currentSignals, signal)
+		currentBytes += separatorBytes + signalBytes
+	}
+
+	if len(currentSignals) > 0 {
+		batches = append(batches, model.TelemetryBatch{Signals: currentSignals})
+	}
+
+	return batches, nil
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
