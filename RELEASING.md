@@ -61,12 +61,12 @@ unauthenticated pulls succeed.
 Verify the published index and embedded version:
 
 ```sh
-docker buildx imagetools inspect ghcr.io/inkronik/kubernetes-agent:1.1.1
-docker run --rm ghcr.io/inkronik/kubernetes-agent:1.1.1 --version
-helm pull oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent --version 1.1.1
+docker buildx imagetools inspect ghcr.io/inkronik/kubernetes-agent:1.1.2
+docker run --rm ghcr.io/inkronik/kubernetes-agent:1.1.2 --version
+helm pull oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent --version 1.1.2
 helm template release-check \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.1 \
+  --version 1.1.2 \
   --namespace inkronik \
   --set-string clusterName=release-check
 ```

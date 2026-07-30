@@ -36,7 +36,7 @@ Install the version-pinned OCI chart:
 ```sh
 helm upgrade --install inkronik-kubernetes-agent \
   oci://ghcr.io/inkronik/charts/inkronik-kubernetes-agent \
-  --version 1.1.1 \
+  --version 1.1.2 \
   --namespace inkronik \
   --create-namespace \
   --set-string clusterName="$CLUSTER_NAME" \
@@ -50,7 +50,7 @@ kubectl -n inkronik logs deployment/inkronik-k8s-agent --follow
 ```
 
 The chart uses the version-pinned image
-`ghcr.io/inkronik/kubernetes-agent:1.1.1` and the hosted Collector at
+`ghcr.io/inkronik/kubernetes-agent:1.1.2` and the hosted Collector at
 `https://collector.inkronik.codemask.dev`. See the
 [chart documentation](charts/inkronik-kubernetes-agent/README.md) for all
 values, upgrades, rollback, externally managed RBAC, and image digest pinning.
@@ -61,7 +61,7 @@ The raw manifest remains available for environments without Helm:
 
 ```sh
 kubectl apply -f \
-  https://raw.githubusercontent.com/inkronik/kubernetes-agent/v1.1.1/deploy/kubernetes.yaml
+  https://raw.githubusercontent.com/inkronik/kubernetes-agent/v1.1.2/deploy/kubernetes.yaml
 
 kubectl -n inkronik set env deployment/inkronik-k8s-agent \
   INKRONIK_CLUSTER_NAME="$CLUSTER_NAME"
@@ -170,7 +170,7 @@ Print the version embedded in a binary or image:
 
 ```sh
 ./inkronik-k8s-agent --version
-docker run --rm ghcr.io/inkronik/kubernetes-agent:1.1.1 --version
+docker run --rm ghcr.io/inkronik/kubernetes-agent:1.1.2 --version
 ```
 
 ## Upgrading
