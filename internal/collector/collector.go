@@ -172,7 +172,7 @@ func (c *Collector) CollectMetrics(ctx context.Context) ([]model.TelemetrySignal
 		signals = append(signals, c.deploymentRolloutSignals(
 			now,
 			deployment,
-			applicationAttributesFromPodSpec(deployment.Labels, deployment.Annotations, deployment.Spec.Template.Spec),
+			applicationAttributesFromDeployment(deployment),
 		)...)
 	}
 
@@ -354,13 +354,19 @@ func (c *Collector) podStateSignals(timestamp time.Time, pod corev1.Pod) []model
 	// Parsed with the SAME function that versions the rollout marker, from the pod's own spec image — so the
 	// version stamped here is byte-identical to the marker's, and the writer can join app telemetry to it
 	// without re-parsing. Per-pod (not the deployment template) is correct mid-rollout: old pods keep the old tag.
-	imageVersionAttribute := imageVersion(pod.Spec)
+	imageVersionAttribute := applicationImageVersion(pod.Spec, applicationAttributes)
+	podStartedAt := ""
+	if pod.Status.StartTime != nil {
+		podStartedAt = pod.Status.StartTime.UTC().Format(time.RFC3339Nano)
+	}
 	phaseAttributes := mergeAttributes(c.baseAttributes(map[string]string{
-		"k8s.scope":     "pod",
-		"k8s.namespace": pod.Namespace,
-		"k8s.pod":       pod.Name,
-		"k8s.node":      pod.Spec.NodeName,
-		"k8s.pod_phase": string(pod.Status.Phase),
+		"k8s.scope":          "pod",
+		"k8s.namespace":      pod.Namespace,
+		"k8s.pod":            pod.Name,
+		"k8s.node":           pod.Spec.NodeName,
+		"k8s.pod_phase":      string(pod.Status.Phase),
+		"k8s.pod.started_at": podStartedAt,
+		"k8s.image_version":  imageVersionAttribute,
 	}), applicationAttributes)
 	signals := []model.TelemetrySignal{
 		c.metricSignal(timestamp, "k8s.pod.phase", "state", 1, phaseAttributes),
@@ -431,7 +437,7 @@ func (c *Collector) deploymentStateSignals(timestamp time.Time, deployment appsv
 		namespace:             deployment.Namespace,
 		name:                  deployment.Name,
 		labels:                deployment.Labels,
-		applicationAttributes: applicationAttributesFromPodSpec(deployment.Labels, deployment.Annotations, deployment.Spec.Template.Spec),
+		applicationAttributes: applicationAttributesFromDeployment(deployment),
 	})
 
 	return []model.TelemetrySignal{
@@ -450,7 +456,7 @@ func (c *Collector) deploymentStateSignals(timestamp time.Time, deployment appsv
 // every agent restart would be worse than missing one.
 func (c *Collector) deploymentRolloutSignals(timestamp time.Time, deployment appsv1.Deployment, applicationAttributes map[string]string) []model.TelemetrySignal {
 	revision := deployment.Annotations["deployment.kubernetes.io/revision"]
-	version := imageVersion(deployment.Spec.Template.Spec)
+	version := applicationImageVersion(deployment.Spec.Template.Spec, applicationAttributes)
 
 	// No revision means this is not a rollout-managed Deployment; no version means nothing to attribute telemetry
 	// to, which is the entire point of the marker.
@@ -461,6 +467,9 @@ func (c *Collector) deploymentRolloutSignals(timestamp time.Time, deployment app
 	id := workloadID("deployment", deployment.Namespace, deployment.Name)
 
 	if !c.recordRevision(id, revision) {
+		return nil
+	}
+	if applicationAttributes["inkronik.application_id"] == "" {
 		return nil
 	}
 
@@ -506,16 +515,40 @@ func (c *Collector) recordRevision(id string, revision string) bool {
 	return seen && previous != revision
 }
 
-// The tag from the workload's first container image, or the digest when the image is pinned by one. Registry
-// ports (`registry:5000/repo:tag`) mean the tag has to be read after the final path segment, not from the whole
-// string.
-func imageVersion(podSpec corev1.PodSpec) string {
-	if len(podSpec.Containers) == 0 {
+// Selects the application container explicitly when a workload has sidecars. A single-container workload is
+// unambiguous; a multi-container workload without matching Inkronik environment metadata is deliberately left
+// unattributed rather than turning the first sidecar image into the application's release version.
+func applicationImageVersion(podSpec corev1.PodSpec, applicationAttributes map[string]string) string {
+	containers := podSpec.Containers
+	if len(containers) == 0 {
 		return ""
 	}
+	if len(containers) == 1 {
+		return imageVersion(containers[0].Image)
+	}
 
-	image := podSpec.Containers[0].Image
+	serviceName := applicationAttributes["inkronik.service_name"]
+	serviceMatches := slices.DeleteFunc(slices.Clone(containers), func(container corev1.Container) bool {
+		return serviceName == "" || firstNonEmpty([]string{containerEnvValue(container, "INKRONIK_SERVICE_NAME"), containerEnvValue(container, "OTEL_SERVICE_NAME")}) != serviceName
+	})
+	if len(serviceMatches) == 1 {
+		return imageVersion(serviceMatches[0].Image)
+	}
 
+	applicationID := applicationAttributes["inkronik.application_id"]
+	applicationMatches := slices.DeleteFunc(slices.Clone(containers), func(container corev1.Container) bool {
+		return applicationID == "" || containerEnvValue(container, "INKRONIK_APPLICATION_ID") != applicationID
+	})
+	if len(applicationMatches) == 1 {
+		return imageVersion(applicationMatches[0].Image)
+	}
+
+	return ""
+}
+
+// Returns an image tag, or a shortened digest for digest-pinned images. Registry ports
+// (`registry:5000/repo:tag`) mean the tag has to be read after the final path segment.
+func imageVersion(image string) string {
 	if digestIndex := strings.LastIndex(image, "@"); digestIndex != -1 {
 		return shortDigest(image[digestIndex+1:])
 	}
@@ -837,7 +870,7 @@ func workloadApplicationAttributesByID(deployments []appsv1.Deployment, replicaS
 	result := make(map[string]map[string]string, len(deployments)+len(replicaSets))
 
 	for _, deployment := range deployments {
-		attributes := applicationAttributesFromPodSpec(deployment.Labels, deployment.Annotations, deployment.Spec.Template.Spec)
+		attributes := applicationAttributesFromDeployment(deployment)
 		if len(attributes) > 0 {
 			result[workloadID("deployment", deployment.Namespace, deployment.Name)] = attributes
 		}
@@ -859,6 +892,17 @@ func workloadID(kind string, namespace string, name string) string {
 
 func applicationAttributesFromPod(pod corev1.Pod) map[string]string {
 	return applicationAttributesFromPodSpec(pod.Labels, pod.Annotations, pod.Spec)
+}
+
+func applicationAttributesFromDeployment(deployment appsv1.Deployment) map[string]string {
+	workloadAttributes := applicationAttributesFromMetadata(deployment.Labels, deployment.Annotations)
+	templateAttributes := applicationAttributesFromPodSpec(
+		deployment.Spec.Template.Labels,
+		deployment.Spec.Template.Annotations,
+		deployment.Spec.Template.Spec,
+	)
+
+	return mergeAttributes(workloadAttributes, templateAttributes)
 }
 
 func applicationAttributesFromPodSpec(labels map[string]string, annotations map[string]string, podSpec corev1.PodSpec) map[string]string {
@@ -901,10 +945,18 @@ func applicationAttributesFromEnv(podSpec corev1.PodSpec) map[string]string {
 
 func firstEnvValue(containers []corev1.Container, name string) string {
 	for _, container := range containers {
-		for _, env := range container.Env {
-			if env.Name == name {
-				return strings.TrimSpace(env.Value)
-			}
+		if value := containerEnvValue(container, name); value != "" {
+			return value
+		}
+	}
+
+	return ""
+}
+
+func containerEnvValue(container corev1.Container, name string) string {
+	for _, env := range container.Env {
+		if env.Name == name {
+			return strings.TrimSpace(env.Value)
 		}
 	}
 

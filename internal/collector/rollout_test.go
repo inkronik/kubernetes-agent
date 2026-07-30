@@ -106,6 +106,18 @@ func TestDeploymentRolloutSignalsIgnoresUnchangedRevision(t *testing.T) {
 	}
 }
 
+func TestDeploymentRolloutSignalsSkipsWorkloadWithoutApplicationAssociation(t *testing.T) {
+	collector := rolloutCollector()
+	now := time.Now()
+
+	collector.deploymentRolloutSignals(now, rolloutDeployment("3", "registry/redis:2.13.0"), nil)
+	signals := collector.deploymentRolloutSignals(now, rolloutDeployment("4", "registry/redis:2.13.1-debian-12-r4"), nil)
+
+	if len(signals) != 0 {
+		t.Fatalf("expected no deployment signal for an unassociated workload, got %d", len(signals))
+	}
+}
+
 func TestDeploymentRolloutSignalsSkipsUnversionedImages(t *testing.T) {
 	collector := rolloutCollector()
 	now := time.Now()
@@ -135,17 +147,49 @@ func TestImageVersion(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			podSpec := corev1.PodSpec{Containers: []corev1.Container{{Image: testCase.image}}}
-
-			if version := imageVersion(podSpec); version != testCase.expected {
+			if version := imageVersion(testCase.image); version != testCase.expected {
 				t.Errorf("expected %q, got %q", testCase.expected, version)
 			}
 		})
 	}
 }
 
+func TestApplicationImageVersionSelectsMatchingContainer(t *testing.T) {
+	podSpec := corev1.PodSpec{Containers: []corev1.Container{
+		{Name: "sidecar", Image: "registry/sidecar:2.13.1-debian-12-r4"},
+		{
+			Name:  "api",
+			Image: "harbor.codemask.dev/voice-analytics/voice-analytics-api:main-1f9b74a-1785308233",
+			Env: []corev1.EnvVar{
+				{Name: "INKRONIK_APPLICATION_ID", Value: "voice-api"},
+				{Name: "INKRONIK_SERVICE_NAME", Value: "voice-analytics-api"},
+			},
+		},
+	}}
+
+	version := applicationImageVersion(podSpec, map[string]string{
+		"inkronik.application_id": "voice-api",
+		"inkronik.service_name":   "voice-analytics-api",
+	})
+
+	if version != "main-1f9b74a-1785308233" {
+		t.Errorf("expected the explicitly associated application image, got %q", version)
+	}
+}
+
+func TestApplicationImageVersionRejectsAmbiguousMultiContainerWorkload(t *testing.T) {
+	podSpec := corev1.PodSpec{Containers: []corev1.Container{
+		{Name: "api", Image: "registry/api:1.2.3"},
+		{Name: "sidecar", Image: "registry/sidecar:4.5.6"},
+	}}
+
+	if version := applicationImageVersion(podSpec, map[string]string{"inkronik.application_id": "voice-api"}); version != "" {
+		t.Errorf("expected no guessed version for an ambiguous workload, got %q", version)
+	}
+}
+
 // The container ready/restart metrics must carry the parsed image version under k8s.image_version, produced by
-// the same imageVersion() that versions the rollout marker — that identity is what lets the writer join an app's
+// the same applicationImageVersion() that versions the rollout marker — that identity is what lets the writer join an app's
 // telemetry to its release without re-parsing. A pod running an untagged image carries no version rather than a
 // misleading one.
 func TestPodStateSignalsStampImageVersion(t *testing.T) {
@@ -180,6 +224,39 @@ func TestPodStateSignalsOmitsImageVersionForUntaggedImages(t *testing.T) {
 	// Empty attributes are dropped by mergeAttributes, so an untagged image leaves no k8s.image_version at all.
 	if version := containerMetricAttribute(t, collector.podStateSignals(time.Now(), pod), "k8s.container.ready", "k8s.image_version"); version != "" {
 		t.Errorf("expected no image version for an untagged image, got %q", version)
+	}
+}
+
+func TestPodStateSignalsStampStartTimeAndApplicationImageVersion(t *testing.T) {
+	collector := rolloutCollector()
+	startedAt := metav1.NewTime(time.Date(2026, time.July, 29, 7, 1, 2, 123_000_000, time.UTC))
+	pod := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-1",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"inkronik.com/application-id": "voice-api",
+				"inkronik.com/service-name":   "voice-analytics-api",
+			},
+		},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{
+			{Name: "sidecar", Image: "registry/sidecar:2.13.1-debian-12-r4"},
+			{
+				Name:  "api",
+				Image: "registry/voice-api:main-1f9b74a-1785308233",
+				Env:   []corev1.EnvVar{{Name: "INKRONIK_SERVICE_NAME", Value: "voice-analytics-api"}},
+			},
+		}},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, StartTime: &startedAt},
+	}
+
+	signals := collector.podStateSignals(time.Now(), pod)
+
+	if value := containerMetricAttribute(t, signals, "k8s.pod.phase", "k8s.pod.started_at"); value != "2026-07-29T07:01:02.123Z" {
+		t.Errorf("expected Kubernetes pod start time, got %q", value)
+	}
+	if value := containerMetricAttribute(t, signals, "k8s.pod.phase", "k8s.image_version"); value != "main-1f9b74a-1785308233" {
+		t.Errorf("expected application image version, got %q", value)
 	}
 }
 
