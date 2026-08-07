@@ -45,6 +45,9 @@ jobs:
       - name: Install release tooling
         run: bun install --frozen-lockfile
 
+      - name: Audit release tooling dependencies
+        run: bun audit --audit-level=high
+
       - name: Check version consistency
         run: bun run check:version
 
