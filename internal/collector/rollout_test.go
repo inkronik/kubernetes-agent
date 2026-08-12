@@ -203,10 +203,17 @@ func TestPodStateSignalsStampImageVersion(t *testing.T) {
 		},
 	}
 
-	version := containerMetricAttribute(t, collector.podStateSignals(time.Now(), pod), "k8s.container.ready", "k8s.image_version")
+	signals := collector.podStateSignals(time.Now(), pod, workloadIdentity{kind: "Deployment", name: "checkout-api"})
+	version := containerMetricAttribute(t, signals, "k8s.container.ready", "k8s.image_version")
 
 	if version != "1.4.3" {
 		t.Errorf("expected k8s.image_version to be the parsed tag 1.4.3, got %q", version)
+	}
+	if kind := containerMetricAttribute(t, signals, "k8s.pod.phase", "k8s.workload_kind"); kind != "Deployment" {
+		t.Errorf("expected workload kind Deployment, got %q", kind)
+	}
+	if name := containerMetricAttribute(t, signals, "k8s.pod.phase", "k8s.workload_name"); name != "checkout-api" {
+		t.Errorf("expected workload name checkout-api, got %q", name)
 	}
 }
 
@@ -222,7 +229,7 @@ func TestPodStateSignalsOmitsImageVersionForUntaggedImages(t *testing.T) {
 	}
 
 	// Empty attributes are dropped by mergeAttributes, so an untagged image leaves no k8s.image_version at all.
-	if version := containerMetricAttribute(t, collector.podStateSignals(time.Now(), pod), "k8s.container.ready", "k8s.image_version"); version != "" {
+	if version := containerMetricAttribute(t, collector.podStateSignals(time.Now(), pod, workloadIdentity{}), "k8s.container.ready", "k8s.image_version"); version != "" {
 		t.Errorf("expected no image version for an untagged image, got %q", version)
 	}
 }
@@ -250,13 +257,92 @@ func TestPodStateSignalsStampStartTimeAndApplicationImageVersion(t *testing.T) {
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, StartTime: &startedAt},
 	}
 
-	signals := collector.podStateSignals(time.Now(), pod)
+	signals := collector.podStateSignals(time.Now(), pod, workloadIdentity{})
 
 	if value := containerMetricAttribute(t, signals, "k8s.pod.phase", "k8s.pod.started_at"); value != "2026-07-29T07:01:02.123Z" {
 		t.Errorf("expected Kubernetes pod start time, got %q", value)
 	}
 	if value := containerMetricAttribute(t, signals, "k8s.pod.phase", "k8s.image_version"); value != "main-1f9b74a-1785308233" {
 		t.Errorf("expected application image version, got %q", value)
+	}
+}
+
+func TestPodWorkloadIdentitiesResolveDeploymentThroughReplicaSet(t *testing.T) {
+	isController := true
+	pods := []corev1.Pod{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-7d9f-abcde",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{{
+				Kind:       "ReplicaSet",
+				Name:       "api-7d9f",
+				Controller: &isController,
+			}},
+		},
+	}}
+	replicaSets := []appsv1.ReplicaSet{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-7d9f",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{{
+				Kind:       "Deployment",
+				Name:       "api",
+				Controller: &isController,
+			}},
+		},
+	}}
+
+	identity := podWorkloadIdentities(pods, replicaSets)["default/api-7d9f-abcde"]
+	if identity.kind != "Deployment" || identity.name != "api" {
+		t.Fatalf("expected Deployment/api, got %s/%s", identity.kind, identity.name)
+	}
+}
+
+func TestPodWorkloadIdentitiesPreserveDirectJobOwner(t *testing.T) {
+	isController := true
+	pods := []corev1.Pod{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "migration-abcde",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{{
+				Kind:       "Job",
+				Name:       "migration",
+				Controller: &isController,
+			}},
+		},
+	}}
+
+	identity := podWorkloadIdentities(pods, nil)["default/migration-abcde"]
+	if identity.kind != "Job" || identity.name != "migration" {
+		t.Fatalf("expected Job/migration, got %s/%s", identity.kind, identity.name)
+	}
+}
+
+func TestPodWorkloadIdentitiesPreserveDirectReplicaSetWhenDeploymentCannotBeResolved(t *testing.T) {
+	isController := true
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{Name: "standalone", Namespace: "default"}},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-7d9f-abcde",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{{
+					Kind:       "ReplicaSet",
+					Name:       "missing",
+					Controller: &isController,
+				}},
+			},
+		},
+	}
+
+	identities := podWorkloadIdentities(pods, nil)
+	if _, exists := identities["default/standalone"]; exists {
+		t.Fatalf("expected standalone pod to have no workload identity")
+	}
+
+	identity := identities["default/api-7d9f-abcde"]
+	if identity.kind != "ReplicaSet" || identity.name != "missing" {
+		t.Fatalf("expected direct ReplicaSet/missing fallback, got %s/%s", identity.kind, identity.name)
 	}
 }
 

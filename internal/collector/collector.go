@@ -71,6 +71,11 @@ type hpaAttributesInput struct {
 	applicationAttributes map[string]string
 }
 
+type workloadIdentity struct {
+	kind string
+	name string
+}
+
 func New(options Options) *Collector {
 	allowedTypes := make(map[string]struct{}, len(options.EventTypes))
 	for _, eventType := range options.EventTypes {
@@ -126,6 +131,7 @@ func (c *Collector) CollectMetrics(ctx context.Context) ([]model.TelemetrySignal
 
 	now := time.Now().UTC()
 	podsByKey := podsByNamespacedName(pods)
+	workloadIdentityByPodKey := podWorkloadIdentities(pods, replicaSets)
 	applicationAttributesByWorkloadID := workloadApplicationAttributesByID(deployments, replicaSets)
 	signals := make([]model.TelemetrySignal, 0, len(nodeMetrics.Items)*4+len(nodes.Items)*14+len(podMetrics)*2+len(pods)*12+len(deployments)*4+len(replicaSets)*4)
 
@@ -149,11 +155,14 @@ func (c *Collector) CollectMetrics(ctx context.Context) ([]model.TelemetrySignal
 	for _, podMetric := range podMetrics {
 		cpuUsage, memoryUsage := sumPodMetricUsage(podMetric)
 		pod := podsByKey[namespacedName(podMetric.Namespace, podMetric.Name)]
+		workloadIdentity := workloadIdentityByPodKey[namespacedName(podMetric.Namespace, podMetric.Name)]
 		attributes := c.baseAttributes(map[string]string{
-			"k8s.scope":     "pod",
-			"k8s.namespace": podMetric.Namespace,
-			"k8s.pod":       podMetric.Name,
-			"k8s.node":      pod.Spec.NodeName,
+			"k8s.scope":         "pod",
+			"k8s.namespace":     podMetric.Namespace,
+			"k8s.pod":           podMetric.Name,
+			"k8s.node":          pod.Spec.NodeName,
+			"k8s.workload_kind": workloadIdentity.kind,
+			"k8s.workload_name": workloadIdentity.name,
 		})
 		attributes = mergeAttributes(attributes, applicationAttributesFromPod(pod))
 
@@ -164,7 +173,7 @@ func (c *Collector) CollectMetrics(ctx context.Context) ([]model.TelemetrySignal
 	}
 
 	for _, pod := range pods {
-		signals = append(signals, c.podStateSignals(now, pod)...)
+		signals = append(signals, c.podStateSignals(now, pod, workloadIdentityByPodKey[namespacedName(pod.Namespace, pod.Name)])...)
 	}
 
 	for _, deployment := range deployments {
@@ -349,7 +358,7 @@ func (c *Collector) nodeConditionSignals(timestamp time.Time, node corev1.Node) 
 	return signals
 }
 
-func (c *Collector) podStateSignals(timestamp time.Time, pod corev1.Pod) []model.TelemetrySignal {
+func (c *Collector) podStateSignals(timestamp time.Time, pod corev1.Pod, workload workloadIdentity) []model.TelemetrySignal {
 	applicationAttributes := applicationAttributesFromPod(pod)
 	// Parsed with the SAME function that versions the rollout marker, from the pod's own spec image — so the
 	// version stamped here is byte-identical to the marker's, and the writer can join app telemetry to it
@@ -367,6 +376,8 @@ func (c *Collector) podStateSignals(timestamp time.Time, pod corev1.Pod) []model
 		"k8s.pod_phase":      string(pod.Status.Phase),
 		"k8s.pod.started_at": podStartedAt,
 		"k8s.image_version":  imageVersionAttribute,
+		"k8s.workload_kind":  workload.kind,
+		"k8s.workload_name":  workload.name,
 	}), applicationAttributes)
 	signals := []model.TelemetrySignal{
 		c.metricSignal(timestamp, "k8s.pod.phase", "state", 1, phaseAttributes),
@@ -398,6 +409,52 @@ func (c *Collector) podStateSignals(timestamp time.Time, pod corev1.Pod) []model
 	}
 
 	return signals
+}
+
+func controllerOwner(ownerReferences []metav1.OwnerReference) (metav1.OwnerReference, bool) {
+	for _, ownerReference := range ownerReferences {
+		if ownerReference.Controller != nil && *ownerReference.Controller {
+			return ownerReference, true
+		}
+	}
+
+	return metav1.OwnerReference{}, false
+}
+
+func podWorkloadIdentities(pods []corev1.Pod, replicaSets []appsv1.ReplicaSet) map[string]workloadIdentity {
+	replicaSetsByKey := make(map[string]appsv1.ReplicaSet, len(replicaSets))
+	for _, replicaSet := range replicaSets {
+		replicaSetsByKey[namespacedName(replicaSet.Namespace, replicaSet.Name)] = replicaSet
+	}
+
+	result := make(map[string]workloadIdentity, len(pods))
+	for _, pod := range pods {
+		owner, exists := controllerOwner(pod.OwnerReferences)
+		if !exists {
+			continue
+		}
+
+		identity := workloadIdentity{kind: owner.Kind, name: owner.Name}
+		if owner.Kind == "ReplicaSet" {
+			replicaSet, replicaSetExists := replicaSetsByKey[namespacedName(pod.Namespace, owner.Name)]
+			if !replicaSetExists {
+				result[namespacedName(pod.Namespace, pod.Name)] = identity
+				continue
+			}
+
+			replicaSetOwner, ownerExists := controllerOwner(replicaSet.OwnerReferences)
+			if !ownerExists || replicaSetOwner.Kind != "Deployment" {
+				result[namespacedName(pod.Namespace, pod.Name)] = identity
+				continue
+			}
+
+			identity = workloadIdentity{kind: replicaSetOwner.Kind, name: replicaSetOwner.Name}
+		}
+
+		result[namespacedName(pod.Namespace, pod.Name)] = identity
+	}
+
+	return result
 }
 
 func (c *Collector) containerResourceSignals(timestamp time.Time, pod corev1.Pod, applicationAttributes map[string]string) []model.TelemetrySignal {

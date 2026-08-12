@@ -25,6 +25,7 @@ func TestCollectMetricsIncludesClusterStateSignals(t *testing.T) {
 	replicas := int32(3)
 	minReplicas := int32(2)
 	targetCPU := int32(80)
+	isController := true
 	applicationEnv := []corev1.EnvVar{
 		{Name: "INKRONIK_APPLICATION_ID", Value: "application-nest"},
 		{Name: "INKRONIK_SERVICE_NAME", Value: "api"},
@@ -49,7 +50,15 @@ func TestCollectMetricsIncludesClusterStateSignals(t *testing.T) {
 				},
 			},
 			&corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "api-7d9", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "api-7d9",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						Kind:       "ReplicaSet",
+						Name:       "api-7d9",
+						Controller: &isController,
+					}},
+				},
 				Spec: corev1.PodSpec{
 					NodeName: "node-a",
 					Containers: []corev1.Container{{
@@ -112,7 +121,15 @@ func TestCollectMetricsIncludesClusterStateSignals(t *testing.T) {
 				Status: autoscalingv2.HorizontalPodAutoscalerStatus{CurrentReplicas: 3, DesiredReplicas: 4},
 			},
 			&appsv1.ReplicaSet{
-				ObjectMeta: metav1.ObjectMeta{Name: "api-7d9", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "api-7d9",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{{
+						Kind:       "Deployment",
+						Name:       "api",
+						Controller: &isController,
+					}},
+				},
 				Spec: appsv1.ReplicaSetSpec{
 					Replicas: &replicas,
 					Template: corev1.PodTemplateSpec{
@@ -195,6 +212,8 @@ func TestCollectMetricsIncludesClusterStateSignals(t *testing.T) {
 	}
 
 	assertMetricResourceAttribute(t, signals, "k8s.pod.phase", "inkronik.ingest_key_prefix", "abc123def45")
+	assertMetricResourceAttribute(t, signals, "k8s.pod.phase", "k8s.workload_kind", "Deployment")
+	assertMetricResourceAttribute(t, signals, "k8s.pod.phase", "k8s.workload_name", "api")
 	assertMetricResourceAttribute(t, signals, "k8s.container.restart_count", "k8s.last_termination_reason", "OOMKilled")
 	assertMetricValue(t, signals, "k8s.container.cpu.request", 500)
 	assertMetricValue(t, signals, "k8s.container.cpu.limit", 1000)
